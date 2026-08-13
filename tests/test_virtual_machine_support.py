@@ -31,6 +31,8 @@ def test_vm_option_is_available_in_model_forms_query_and_serializer():
     assert '"show_virtual_machines"' in source("api/serializers.py")
     utils = source("utils.py")
     assert '"show_virtual_machines" in request.GET' in utils
+    api = source("api/views.py")
+    assert "save_coords, show_unconnected, show_virtual_machines, show_power" in api
 
 
 def test_topology_builds_active_vm_nodes_and_host_edges_without_changing_device_ids():

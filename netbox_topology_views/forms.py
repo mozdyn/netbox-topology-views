@@ -257,6 +257,11 @@ class DeviceFilterForm(
         )
     )
 
+    show_virtual_machines = forms.NullBooleanField(
+        label=_('Show Virtual Machines'), required=False, initial=False,
+        help_text=_('Show active virtual machines whose cluster has exactly one host device.'),
+        widget=forms.Select(choices=BOOLEAN_WITH_BLANK_CHOICES)
+    )
     show_cables = forms.NullBooleanField(
         required=False,
         initial=False,
@@ -540,6 +545,7 @@ class IndividualOptionsForm(NetBoxModelForm):
                 'preselected_tags',
                 'save_coords',
                 'show_unconnected',
+                'show_virtual_machines',
                 'show_cables',
                 'show_wireless',
                 'show_logical_connections',
@@ -604,6 +610,9 @@ class IndividualOptionsForm(NetBoxModelForm):
         help_text=_('Draws devices that have no connections or for which no '
             'connection is displayed. This option depends on other parameters '
             'like \'Show Cables\' and \'Show Logical Connections\'.')
+    )
+    show_virtual_machines = forms.BooleanField(
+        label=_('Show Virtual Machines'), required=False, initial=False
     )
     show_cables = forms.BooleanField(
         label =_('Show Cables'),

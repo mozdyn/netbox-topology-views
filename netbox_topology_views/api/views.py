@@ -5,6 +5,7 @@ from netbox.api.viewsets import BaseViewSet, NetBoxModelViewSet
 
 from circuits.models import Circuit
 from dcim.models import Device, DeviceRole, PowerFeed, PowerPanel
+from virtualization.models import VirtualMachine
 from extras.models import SavedFilter
 from django.conf import settings
 from django.contrib.auth.mixins import PermissionRequiredMixin
@@ -19,12 +20,13 @@ from netbox_topology_views.api.serializers import (
     TopologyDummySerializer,
     CoordinateGroupSerializer,
     CoordinateSerializer,
+    VMCoordinateSerializer,
     CircuitCoordinateSerializer,
     PowerPanelCoordinateSerializer,
     PowerFeedCoordinateSerializer,
 )
 import netbox_topology_views.models
-from netbox_topology_views.models import RoleImage, IndividualOptions, CoordinateGroup, Coordinate, CircuitCoordinate, PowerPanelCoordinate, PowerFeedCoordinate
+from netbox_topology_views.models import RoleImage, IndividualOptions, CoordinateGroup, Coordinate, VMCoordinate, CircuitCoordinate, PowerPanelCoordinate, PowerFeedCoordinate
 from netbox_topology_views.views import get_topology_data
 from netbox_topology_views.utils import get_image_from_url, export_data_to_xml, get_query_settings
 from netbox_topology_views.filters import DeviceFilterSet
@@ -48,7 +50,11 @@ class SaveCoordsViewSet(BaseViewSet, ReadOnlyModelViewSet):
         group_id = request.data.get("group", "None")
 
         actual_device = None
-        if device_id.startswith("c"):
+        if device_id.startswith("vm-"):
+            device_id = device_id.removeprefix("vm-")
+            actual_device = VirtualMachine.objects.get(id=device_id)
+            model_name = 'VMCoordinate'
+        elif device_id.startswith("c"):
             device_id = device_id.lstrip("c")
             actual_device = Circuit.objects.get(id=device_id)
             model_name = 'CircuitCoordinate'
@@ -159,6 +165,7 @@ class ExportTopoToXML(BaseViewSet, ViewSet):
                 ignore_cable_type=ignore_cable_type,
                 save_coords=save_coords,
                 show_unconnected=show_unconnected,
+                show_virtual_machines=show_virtual_machines,
                 show_cables=show_cables,
                 show_logical_connections=show_logical_connections,
                 show_single_cable_logical_conns=show_single_cable_logical_conns,
@@ -271,6 +278,10 @@ class CoordinateGroupViewSet(NetBoxModelViewSet):
 class CoordinateViewSet(NetBoxModelViewSet):
     queryset = Coordinate.objects.all()
     serializer_class = CoordinateSerializer
+
+class VMCoordinateViewSet(NetBoxModelViewSet):
+    queryset = VMCoordinate.objects.all()
+    serializer_class = VMCoordinateSerializer
 
 class CircuitCoordinateViewSet(NetBoxModelViewSet):
     queryset = CircuitCoordinate.objects.all()

@@ -132,6 +132,11 @@ def get_query_settings(request):
         if request.GET["show_unconnected"] == "True":
             show_unconnected = True
 
+    show_virtual_machines = False
+    if "show_virtual_machines" in request.GET:
+        if request.GET["show_virtual_machines"] == "True":
+            show_virtual_machines = True
+
     show_power = False
     if "show_power" in request.GET:
         if request.GET["show_power"] == "True":
@@ -214,7 +219,7 @@ def get_query_settings(request):
     if "node_label_items" in request.GET:
         node_label_items = request.GET.getlist('node_label_items')
 
-    return filter_id, ignore_cable_type, save_coords, show_unconnected, show_power, show_circuit, show_logical_connections, show_single_cable_logical_conns, show_cables, show_wireless, group_sites, group_locations, group_racks, group_virtualchassis, group, show_neighbors, straight_cables, draw_termination_labels, draw_cable_labels, grid_size, node_label_items
+    return filter_id, ignore_cable_type, save_coords, show_unconnected, show_virtual_machines, show_power, show_circuit, show_logical_connections, show_single_cable_logical_conns, show_cables, show_wireless, group_sites, group_locations, group_racks, group_virtualchassis, group, show_neighbors, straight_cables, draw_termination_labels, draw_cable_labels, grid_size, node_label_items
 
 class LinePattern():
     wireless = [2, 10, 2, 10]

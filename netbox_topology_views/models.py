@@ -3,6 +3,7 @@ from typing import Optional
 
 from circuits.models import Circuit
 from dcim.models import Device, DeviceRole, PowerPanel, PowerFeed
+from virtualization.models import VirtualMachine
 from extras.models import Tag
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
@@ -175,6 +176,24 @@ class Coordinate(NetBoxModel):
 
     def get_absolute_url(self):
         return reverse('plugins:netbox_topology_views:coordinate', args=[self.pk])
+
+
+class VMCoordinate(NetBoxModel):
+    """Coordinates for a native NetBox virtual machine."""
+    device = models.ForeignKey(VirtualMachine, on_delete=models.CASCADE)
+    group = models.ForeignKey(CoordinateGroup, on_delete=models.CASCADE)
+    x = models.IntegerField()
+    y = models.IntegerField()
+    _netbox_private = True
+
+    get_or_create_default_group = staticmethod(Coordinate.get_or_create_default_group)
+
+    class Meta:
+        ordering = ['group', 'device']
+        unique_together = ('device', 'group')
+
+    def __str__(self):
+        return f'{self.x};{self.y}'
 
 class CircuitCoordinate(NetBoxModel):
     """
@@ -364,6 +383,9 @@ class IndividualOptions(NetBoxModel):
         default=False
     )
     show_unconnected = models.BooleanField(
+        default=False
+    )
+    show_virtual_machines = models.BooleanField(
         default=False
     )
     show_cables = models.BooleanField(

@@ -2,7 +2,7 @@ from dcim.models import Device, DeviceRole
 from rest_framework.serializers import ModelSerializer
 from netbox.api.serializers import NetBoxModelSerializer
 
-from netbox_topology_views.models import RoleImage, IndividualOptions, CoordinateGroup, Coordinate, CircuitCoordinate, PowerPanelCoordinate, PowerFeedCoordinate
+from netbox_topology_views.models import RoleImage, IndividualOptions, CoordinateGroup, Coordinate, VMCoordinate, CircuitCoordinate, PowerPanelCoordinate, PowerFeedCoordinate
 
 
 class TopologyDummySerializer(ModelSerializer):
@@ -32,6 +32,11 @@ class CoordinateSerializer(NetBoxModelSerializer):
         model = Coordinate
         fields = ("x", "y")
 
+class VMCoordinateSerializer(NetBoxModelSerializer):
+    class Meta:
+        model = VMCoordinate
+        fields = ("x", "y")
+
 class CircuitCoordinateSerializer(NetBoxModelSerializer):
     class Meta:
         model = CircuitCoordinate
@@ -50,7 +55,7 @@ class PowerFeedCoordinateSerializer(NetBoxModelSerializer):
 class IndividualOptionsSerializer(NetBoxModelSerializer):
     class Meta:
         model = IndividualOptions
-        fields = ("ignore_cable_type", "save_coords", "show_unconnected", "show_cables", "show_logical_connections", 
+        fields = ("ignore_cable_type", "save_coords", "show_unconnected", "show_virtual_machines", "show_cables", "show_logical_connections",
             "show_single_cable_logical_conns", "show_neighbors", "show_circuit", "show_power", "show_wireless", "group_sites", 
             "group_locations", "group_racks", "group_virtualchassis", "draw_default_layout", "straight_cables", 
             "draw_termination_labels", "draw_cable_labels", "grid_size", "node_label_items")

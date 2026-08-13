@@ -27,6 +27,7 @@ from django.shortcuts import render, get_object_or_404
 from django.views.generic import View
 from extras.models import Tag, SavedFilter
 from wireless.models import WirelessLink
+from virtualization.models import VirtualMachine, VMInterface
 from netbox.views.generic import (
     ObjectView, 
     ObjectListView, 
@@ -63,6 +64,7 @@ from netbox_topology_views.models import (
     CircuitCoordinate, 
     PowerPanelCoordinate, 
     PowerFeedCoordinate,
+    VMCoordinate,
 )
 from netbox_topology_views.tables import CoordinateGroupListTable, CoordinateListTable, CircuitCoordinateListTable, PowerPanelCoordinateListTable, PowerFeedCoordinateListTable
 from netbox_topology_views.utils import (
@@ -78,31 +80,46 @@ from netbox_topology_views.utils import (
 
 from netbox_topology_views.choices import NodeLabelItems
 
-def get_image_for_entity(entity: Union[Device, Circuit, PowerPanel, PowerFeed]):
-    is_device = isinstance(entity, Device)
-    query = (
-        {"object_id": entity.role_id}
-        if is_device
-        else {"content_type_id": ContentType.objects.get_for_model(entity).pk}
-    )
-
+def get_image_for_entity(entity: Union[Device, VirtualMachine, Circuit, PowerPanel, PowerFeed]):
+    if isinstance(entity, (Device, VirtualMachine)):
+        try:
+            return RoleImage.objects.get(object_id=entity.role_id).get_image_url()
+        except RoleImage.DoesNotExist:
+            if isinstance(entity, VirtualMachine):
+                try:
+                    return RoleImage.objects.get(
+                        content_type_id=ContentType.objects.get_for_model(VirtualMachine).pk
+                    ).get_image_url()
+                except RoleImage.DoesNotExist:
+                    pass
+            return find_image_url(entity.role.slug)
     try:
-        return RoleImage.objects.get(**query).get_image_url()
+        return RoleImage.objects.get(
+            content_type_id=ContentType.objects.get_for_model(entity).pk
+        ).get_image_url()
     except RoleImage.DoesNotExist:
-        return find_image_url(
-            entity.role.slug if is_device else get_model_slug(entity.__class__)
-        )
+        return find_image_url(get_model_slug(entity.__class__))
 
 
 def create_node(
-    device: Union[Device, Circuit, PowerPanel, PowerFeed], 
+    device: Union[Device, VirtualMachine, Circuit, PowerPanel, PowerFeed],
     save_coords: bool, 
     node_label_items: list,
     group_id="default"
 ):
     node = {}
     node_content = ""
-    if isinstance(device, Circuit):
+    if isinstance(device, VirtualMachine):
+        model_name = 'VMCoordinate'
+        dev_name = device.name
+        node["id"] = f"vm-{device.pk}"
+        if device.role is not None:
+            node_content += f"<tr><th>Role: </th><td>{device.role.name}</td></tr>"
+        if device.cluster is not None:
+            node_content += f"<tr><th>Cluster: </th><td>{device.cluster.name}</td></tr>"
+        if device.primary_ip is not None:
+            node_content += f"<tr><th>IP Address: </th><td>{device.primary_ip.address}</td></tr>"
+    elif isinstance(device, Circuit):
         dev_name = device.cid
         node["id"] = f"c{device.pk}"
         model_name = 'CircuitCoordinate'
@@ -377,6 +394,7 @@ def get_topology_data(
     queryset: QuerySet,
     individualOptions: IndividualOptions,
     show_unconnected: bool,
+    show_virtual_machines: bool,
     ignore_cable_type: list,
     save_coords: bool,
     show_cables: bool,
@@ -749,6 +767,27 @@ def get_topology_data(
         if qs_device.pk not in nodes_devices and show_unconnected:
             nodes_devices[qs_device.pk] = qs_device
 
+    if show_virtual_machines:
+        virtual_machines = VirtualMachine.objects.filter(status="active", cluster__devices__in=device_ids).distinct()
+        for vm in virtual_machines:
+            cluster = vm.cluster
+            if cluster is None or cluster.devices.count() != 1:
+                continue
+            host = cluster.devices.first()
+            if host.pk not in device_ids:
+                continue
+            nodes_devices[host.pk] = host
+            nodes.append(create_node(vm, save_coords, node_label_items, group_id))
+            vm_interfaces = list(VMInterface.objects.filter(virtual_machine=vm))
+            interface_names = ", ".join(interface.name for interface in vm_interfaces) or "No VMInterface"
+            edge_ids += 1
+            edges.append({
+                "id": edge_ids, "from": host.pk, "to": f"vm-{vm.pk}",
+                "color": "#8f8f8f", "dashes": LinePattern().logical,
+                "smooth": not straight_cables,
+                "title": f"Virtual Machine/Container<br>{host.name} to {vm.name}<br>VMInterface: {interface_names}",
+            })
+
     results = {}
 
     for d in nodes_devices.values():
@@ -783,7 +822,7 @@ class TopologyHomeView(PermissionRequiredMixin, View):
 
         if request.GET:
 
-            filter_id, ignore_cable_type, save_coords, show_unconnected, show_power, show_circuit, show_logical_connections, show_single_cable_logical_conns, show_cables, show_wireless, group_sites, group_locations, group_racks, group_virtualchassis, group, show_neighbors, straight_cables, draw_termination_labels, draw_cable_labels, grid_size, node_label_items = get_query_settings(request)
+            filter_id, ignore_cable_type, save_coords, show_unconnected, show_virtual_machines, show_power, show_circuit, show_logical_connections, show_single_cable_logical_conns, show_cables, show_wireless, group_sites, group_locations, group_racks, group_virtualchassis, group, show_neighbors, straight_cables, draw_termination_labels, draw_cable_labels, grid_size, node_label_items = get_query_settings(request)
             
             filter_required = True
             empty_result = False
@@ -797,6 +836,7 @@ class TopologyHomeView(PermissionRequiredMixin, View):
                     if ignore_cable_type == () and 'ignore_cable_type' in saved_filter_params: ignore_cable_type = saved_filter_params['ignore_cable_type']
                     if save_coords == False and 'save_coords' in saved_filter_params: save_coords = saved_filter_params['save_coords']
                     if show_unconnected == False and 'show_unconnected' in saved_filter_params: show_unconnected = saved_filter_params['show_unconnected']
+                    if show_virtual_machines == False and 'show_virtual_machines' in saved_filter_params: show_virtual_machines = saved_filter_params['show_virtual_machines']
                     if show_power == False and 'show_power' in saved_filter_params: show_power = saved_filter_params['show_power']
                     if show_circuit == False and 'show_circuit' in saved_filter_params: show_circuit = saved_filter_params['show_circuit']
                     if show_logical_connections == False and 'show_logical_connections' in saved_filter_params: show_logical_connections = saved_filter_params['show_logical_connections']
@@ -835,6 +875,7 @@ class TopologyHomeView(PermissionRequiredMixin, View):
                     ignore_cable_type=ignore_cable_type,
                     save_coords=save_coords,
                     show_unconnected=show_unconnected,
+                    show_virtual_machines=show_virtual_machines,
                     show_cables=show_cables,
                     show_logical_connections=show_logical_connections,
                     show_single_cable_logical_conns=show_single_cable_logical_conns,
@@ -871,6 +912,7 @@ class TopologyHomeView(PermissionRequiredMixin, View):
 
             if individualOptions.save_coords: q['save_coords'] = "True"
             if individualOptions.show_unconnected: q['show_unconnected'] = "True"
+            if individualOptions.show_virtual_machines: q['show_virtual_machines'] = "True"
             if individualOptions.show_cables: q['show_cables'] = "True"
             if individualOptions.show_logical_connections: q['show_logical_connections'] = "True"
             if individualOptions.show_single_cable_logical_conns: q['show_single_cable_logical_conns'] = "True"

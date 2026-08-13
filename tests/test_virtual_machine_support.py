@@ -14,6 +14,8 @@ def test_vm_coordinate_model_and_migration_exist():
     assert "to='virtualization.virtualmachine'" in migration
     assert "unique_together" in migration
     assert "show_virtual_machines" in migration
+    assert "migrations.swappable_dependency(settings.AUTH_USER_MODEL)" not in migration
+    assert "('virtualization', '0057_alter_cluster__region_alter_cluster__site_group')" in migration
 
 
 def test_vm_coordinate_is_exposed_and_save_endpoint_accepts_vm_node_ids():

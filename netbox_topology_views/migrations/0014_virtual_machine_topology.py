@@ -4,7 +4,7 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
     dependencies = [
         ('netbox_topology_views', '0013_individualoptions_draw_cable_labels'),
-        ('virtualization', '0001_initial'),
+        ('virtualization', '0057_alter_cluster__region_alter_cluster__site_group'),
     ]
     operations = [
         migrations.AddField(model_name='individualoptions', name='show_virtual_machines', field=models.BooleanField(default=False)),

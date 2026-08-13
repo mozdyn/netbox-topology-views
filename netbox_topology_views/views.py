@@ -20,10 +20,11 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.contrib.contenttypes.models import ContentType
-from django.db.models import Q, QuerySet, Count
+from django.db.models import Q, QuerySet, Count, Prefetch
 from django.db.models.functions import Lower
 from django.http import HttpRequest, HttpResponseRedirect, QueryDict
 from django.shortcuts import render, get_object_or_404
+from django.utils.html import conditional_escape
 from django.views.generic import View
 from extras.models import Tag, SavedFilter
 from wireless.models import WirelessLink
@@ -82,17 +83,22 @@ from netbox_topology_views.choices import NodeLabelItems
 
 def get_image_for_entity(entity: Union[Device, VirtualMachine, Circuit, PowerPanel, PowerFeed]):
     if isinstance(entity, (Device, VirtualMachine)):
-        try:
-            return RoleImage.objects.get(object_id=entity.role_id).get_image_url()
-        except RoleImage.DoesNotExist:
-            if isinstance(entity, VirtualMachine):
-                try:
-                    return RoleImage.objects.get(
-                        content_type_id=ContentType.objects.get_for_model(VirtualMachine).pk
-                    ).get_image_url()
-                except RoleImage.DoesNotExist:
-                    pass
-            return find_image_url(entity.role.slug)
+        if entity.role is not None:
+            try:
+                return RoleImage.objects.get(
+                    content_type_id=ContentType.objects.get_for_model(entity.role).pk,
+                    object_id=entity.role_id,
+                ).get_image_url()
+            except RoleImage.DoesNotExist:
+                pass
+        if isinstance(entity, VirtualMachine):
+            try:
+                return RoleImage.objects.get(
+                    content_type_id=ContentType.objects.get_for_model(VirtualMachine).pk
+                ).get_image_url()
+            except RoleImage.DoesNotExist:
+                pass
+        return find_image_url(entity.role.slug if entity.role is not None else "role-unknown")
     try:
         return RoleImage.objects.get(
             content_type_id=ContentType.objects.get_for_model(entity).pk
@@ -114,11 +120,11 @@ def create_node(
         dev_name = device.name
         node["id"] = f"vm-{device.pk}"
         if device.role is not None:
-            node_content += f"<tr><th>Role: </th><td>{device.role.name}</td></tr>"
+            node_content += f"<tr><th>Role: </th><td>{conditional_escape(device.role.name)}</td></tr>"
         if device.cluster is not None:
-            node_content += f"<tr><th>Cluster: </th><td>{device.cluster.name}</td></tr>"
+            node_content += f"<tr><th>Cluster: </th><td>{conditional_escape(device.cluster.name)}</td></tr>"
         if device.primary_ip is not None:
-            node_content += f"<tr><th>IP Address: </th><td>{device.primary_ip.address}</td></tr>"
+            node_content += f"<tr><th>IP Address: </th><td>{conditional_escape(device.primary_ip.address)}</td></tr>"
     elif isinstance(device, Circuit):
         dev_name = device.cid
         node["id"] = f"c{device.pk}"
@@ -414,6 +420,7 @@ def get_topology_data(
     draw_cable_labels: bool,
     grid_size: list,
     node_label_items: list,
+    user=None,
 ):
     
     supported_termination_types = []
@@ -767,25 +774,35 @@ def get_topology_data(
         if qs_device.pk not in nodes_devices and show_unconnected:
             nodes_devices[qs_device.pk] = qs_device
 
-    if show_virtual_machines:
-        virtual_machines = VirtualMachine.objects.filter(status="active", cluster__devices__in=device_ids).distinct()
+    if show_virtual_machines and user is not None:
+        virtual_machines = (
+            VirtualMachine.objects.restrict(user, "view")
+            .filter(status="active", cluster__devices__in=device_ids)
+            .select_related("cluster", "role", "primary_ip4", "primary_ip6")
+            .prefetch_related(
+                Prefetch("cluster__devices", queryset=Device.objects.filter(pk__in=device_ids)),
+                Prefetch("interfaces", queryset=VMInterface.objects.only("id", "name", "virtual_machine_id")),
+            )
+            .distinct()
+        )
         for vm in virtual_machines:
             cluster = vm.cluster
-            if cluster is None or cluster.devices.count() != 1:
+            hosts = list(cluster.devices.all()) if cluster is not None else []
+            if len(hosts) != 1:
                 continue
-            host = cluster.devices.first()
+            host = hosts[0]
             if host.pk not in device_ids:
                 continue
             nodes_devices[host.pk] = host
             nodes.append(create_node(vm, save_coords, node_label_items, group_id))
-            vm_interfaces = list(VMInterface.objects.filter(virtual_machine=vm))
+            vm_interfaces = list(vm.interfaces.all())
             interface_names = ", ".join(interface.name for interface in vm_interfaces) or "No VMInterface"
             edge_ids += 1
             edges.append({
                 "id": edge_ids, "from": host.pk, "to": f"vm-{vm.pk}",
                 "color": "#8f8f8f", "dashes": LinePattern().logical,
                 "smooth": not straight_cables,
-                "title": f"Virtual Machine/Container<br>{host.name} to {vm.name}<br>VMInterface: {interface_names}",
+                "title": f"Virtual Machine/Container<br>{conditional_escape(host.name)} to {conditional_escape(vm.name)}<br>VMInterface: {conditional_escape(interface_names)}",
             })
 
     results = {}
@@ -893,6 +910,7 @@ class TopologyHomeView(PermissionRequiredMixin, View):
                     draw_cable_labels=draw_cable_labels,
                     grid_size=grid_size,
                     node_label_items=node_label_items,
+                    user=request.user,
                 )
 
                 if topo_data is None or not topo_data["nodes"]:

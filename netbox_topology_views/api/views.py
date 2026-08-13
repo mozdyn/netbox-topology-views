@@ -52,7 +52,9 @@ class SaveCoordsViewSet(BaseViewSet, ReadOnlyModelViewSet):
         actual_device = None
         if device_id.startswith("vm-"):
             device_id = device_id.removeprefix("vm-")
-            actual_device = VirtualMachine.objects.get(id=device_id)
+            actual_device = VirtualMachine.objects.restrict(request.user, "view").get(id=device_id)
+            if not request.user.has_perm("virtualization.change_virtualmachine", actual_device):
+                return Response({"status": "not permitted"}, status=403)
             model_name = 'VMCoordinate'
         elif device_id.startswith("c"):
             device_id = device_id.lstrip("c")
@@ -183,6 +185,7 @@ class ExportTopoToXML(BaseViewSet, ViewSet):
                 draw_cable_labels=draw_cable_labels,
                 grid_size=grid_size,
                 node_label_items=node_label_items,
+                user=request.user,
             )
             xml_data = export_data_to_xml(topo_data).decode('utf-8').replace('\n', '&#xa;')
 
